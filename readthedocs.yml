@@ -12,7 +12,6 @@ build:
   jobs:
     pre_install:
       - pip install uv
-    post_install:
       - UV_PROJECT_ENVIRONMENT=$READTHEDOCS_VIRTUALENV_PATH uv sync --group dev --link-mode=copy
       - uv pip install .
 
