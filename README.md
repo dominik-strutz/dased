@@ -111,8 +111,9 @@ best_layout.plot(show_knots=True)
 
 ## Documentation
 
-For detailed tutorials and API documentation, visit:
+For detailed tutorials and API documentation, visit the full documentation at [dased.readthedocs.io](https://dased.readthedocs.io).
 
+Specific sections:
 - **Tutorials**: [dased.readthedocs.io/tutorials](https://dased.readthedocs.io/en/latest/tutorials.html)
 - **API Reference**: [dased.readthedocs.io/api](https://dased.readthedocs.io/en/latest/api_reference.html)
 
