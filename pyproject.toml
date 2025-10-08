@@ -24,7 +24,6 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "dased",
     "furo>=2024.8.6",
     "ipykernel>=6.30.1",
     "jupyter>=1.1.1",
@@ -36,4 +35,3 @@ dev = [
 
 [tool.uv.sources]
 geobed = { git = "https://github.com/dominik-strutz/GeoBED" }
-dased = { workspace = true }

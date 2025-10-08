@@ -10,8 +10,12 @@ build:
   tools:
     python: "3.13"
   jobs:
-    post_install:
+    pre_install:
       - pip install uv
-      - UV_PROJECT_ENVIRONMENT=$READTHEDOCS_VIRTUALENV_PATH uv sync --all-extras --group dev --link-mode=copy
+    post_install:
+      - UV_PROJECT_ENVIRONMENT=$READTHEDOCS_VIRTUALENV_PATH uv sync --group dev --link-mode=copy
+      - uv pip install .
+
+# Build documentation with Sphinx
 sphinx:
   configuration: docs/conf.py

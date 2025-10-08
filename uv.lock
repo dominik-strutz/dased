@@ -465,7 +465,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "dased" },
     { name = "furo" },
     { name = "ipykernel" },
     { name = "jupyter" },
@@ -497,7 +496,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "dased", virtual = "." },
     { name = "furo", specifier = ">=2024.8.6" },
     { name = "ipykernel", specifier = ">=6.30.1" },
     { name = "jupyter", specifier = ">=1.1.1" },
