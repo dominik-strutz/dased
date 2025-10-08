@@ -8,6 +8,7 @@ Cartesian and geographic coordinate systems.
 
 import logging
 import warnings
+from copy import deepcopy
 
 from typing import Callable, Dict, Optional, Union
 
@@ -754,7 +755,20 @@ class DASLayout:
         )
 
         # Sample spline at high resolution for arc length approximation
-        num_samples = 1000
+        # Estimate cable length from knot distances to determine adaptive sampling
+        knot_distances = np.linalg.norm(np.diff(self.knots, axis=0), axis=1)
+        estimated_length = np.sum(knot_distances)
+        
+        # Adaptive sampling: aim for ~10-20 samples per channel spacing
+        # with minimum of 100 and maximum of 50000 samples
+        samples_per_spacing = 15
+        num_samples = int(np.clip(
+            (estimated_length / spacing) * samples_per_spacing,
+            1000,
+            100000
+        ))
+        print(f"Sampling spline with {num_samples} points for arc length calculation.")
+        
         t_samples = np.linspace(t_start, t_end, num_samples)
         points_2d = spline_func(t_samples)
 
@@ -1261,6 +1275,46 @@ class DASLayout:
 
     def __repr__(self):
         return self.__str__()
+    
+    def translate(self, offset):
+        """
+        Translate the entire layout by a specified offset in local coordinates.
+
+        This method shifts all channel and knot locations by the given (dx, dy)
+        offset, effectively moving the entire layout without altering its shape
+        or orientation.
+
+        Arguments:
+            offset: Tuple or array-like of (dx, dy) translation in meters.
+
+        Raises:
+            ValueError: If offset is not a tuple or array-like of length 2.
+        """
+        offset = np.asarray(offset)
+        if offset.shape != (2,):
+            raise ValueError("Offset must be a tuple or array-like of length 2 (dx, dy).")
+
+        # Translate channel locations
+        if self.n_channels > 0:
+            self.channel_locations[:, 0] += offset[0]
+            self.channel_locations[:, 1] += offset[1]
+
+        # Translate knot locations if they exist
+        if hasattr(self, "knot_locations") and self.knot_locations is not None:
+            self.knot_locations[:, 0] += offset[0]
+            self.knot_locations[:, 1] += offset[1]
+
+        # Note: Reference point and CRS remain unchanged as this is a local translation
+
+    def copy(self):
+        """
+        Create a deep copy of the DASLayout instance.
+
+        Returns:
+            DASLayout: A new instance that is a deep copy of the current layout.
+        """
+        return deepcopy(self)
+
 
 
 # TODO: make sure this relies as much as possible on DASLayout and is appropriately tested and documented
