@@ -651,7 +651,6 @@ class RaySensitivity:
         """Estimates the largest eigenvalue using the power method."""
         if A.shape[0] == 0:
             return 0.0
-        # Use float64 for potentially better precision in intermediate steps
         x = np.random.rand(A.shape[0]).astype(np.float64)
         norm_x = np.linalg.norm(x)
         if norm_x < 1e-12:
@@ -681,10 +680,9 @@ class RaySensitivity:
         # No data → penalty or zero
         if L is None or L.shape[0] == 0 or L.shape[1] == 0:
             return default_penalty
-
         # Fisher Information Matrix
         F = L.T @ L
-        # Convert to dense torch tensor (float64 for precision)
+        # Convert to dense torch tensor (double precision)
         A_np = F.toarray() if hasattr(F, "toarray") else np.asarray(F)
         A = torch.from_numpy(A_np).double()
 
@@ -724,14 +722,16 @@ class RaySensitivity:
                 else:
                     return float(num_bad * pen.item() + good.numel() * pen.item())
 
-            log_det = torch.sum(torch.log(good)) + num_bad * pen
+                log_det = torch.sum(torch.log(good)) + num_bad * pen
 
-            if normalize:
                 denom = pen * n
-            else:
-                denom = torch.abs(pen - torch.log(good.max())) * n
+                
+                return float((1.0 - torch.abs(log_det / denom)).item())
 
-            return float((1.0 - torch.abs(log_det / denom)).item())
+            else:
+                log_det = torch.sum(torch.log(good)) + num_bad * pen
+        
+                return float(log_det.item())
 
         elif self.criterion == "RER":
             # RER-optimality: normalized rank
@@ -959,6 +959,7 @@ class RaySensitivity:
         show_stats: bool = True,
         plot_sources: bool = True,
         plot_roi_boundary: bool = True,
+        log_scale: bool = True,
         **kwargs,
     ) -> Tuple[Optional[plt.Figure], Optional[matplotlib.axes.Axes]]:
         """
@@ -971,13 +972,14 @@ class RaySensitivity:
             show_stats: Display statistics text box.
             plot_sources: Plot source markers if sources were provided.
             plot_roi_boundary: Plot the ROI boundary if ROI was provided.
+            log_scale: If True, apply log1p transformation to sensitivity values.
             **kwargs: Additional arguments passed to `ax.pcolormesh`.
 
         Returns:
             tuple: (fig, ax) The figure and axes objects, or (None, None) on failure.
         """
-        if not isinstance(design, DASLayout):
-            raise TypeError("Plotting requires a DASLayout object.")
+        if not isinstance(design, (DASLayout, GeoDataFrame)):
+            raise TypeError("Plotting requires a DASLayout object or GeoDataFrame.")
 
         # Ensure sensitivity matrix is built for the current design
         L = self._build_sensitivity_matrix(design)
@@ -1010,7 +1012,10 @@ class RaySensitivity:
         # Or Z[x, y] if X,Y are meshgrid(x,y, indexing='ij')
         # Our sensitivity_grid is [self.nx, self.ny], so use indexing='ij'
         x_grid, y_grid = np.meshgrid(x_coords, y_coords, indexing="ij")
-        mesh = ax.pcolormesh(x_grid, y_grid, sensitivity_grid, **kwargs)
+        
+        # Apply log transformation if requested
+        plot_data = np.log1p(sensitivity_grid) if log_scale else sensitivity_grid
+        mesh = ax.pcolormesh(x_grid, y_grid, plot_data, **kwargs)
 
         # Return early if ax was provided
         if fig is None:
@@ -1088,7 +1093,7 @@ class RaySensitivity:
 
         return fig, ax
 
-    def get_eigenvalue_spectrum(self, design: DASLayout) -> np.ndarray:
+    def get_eigenvalue_spectrum(self, design: DASLayout, normalise=True) -> np.ndarray:
         """
         Computes the normalized eigenvalue spectrum of the sensitivity matrix for the given design.
 
@@ -1098,8 +1103,6 @@ class RaySensitivity:
         Returns:
             np.ndarray: Normalized eigenvalues in descending order.
         """
-        if not isinstance(design, DASLayout):
-            raise TypeError("Requires a DASLayout object.")
 
         L = self._build_sensitivity_matrix(design)
         if self._original_grid_shape is None or L.shape[0] == 0 or L.shape[1] == 0:
@@ -1118,7 +1121,7 @@ class RaySensitivity:
 
         eigenvalues = np.sort(eigenvalues)[::-1]  # Descending
         max_eig = np.nanmax(eigenvalues)
-        if max_eig > 0:
+        if max_eig > 0 and normalise:
             eigenvalues /= max_eig  # Normalize
         return eigenvalues
 
