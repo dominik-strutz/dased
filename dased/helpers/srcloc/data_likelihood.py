@@ -465,7 +465,7 @@ class DataLikelihood:
         distance_tensor = torch.cdist(coordinates, coordinates, p=2).double()
         exp_factor = -0.5 / (self.cor_length**2)
         correlation_matrix = torch.exp(distance_tensor.pow(2) * exp_factor)
-        correlation_matrix = torch.clamp(correlation_matrix, max=0.9)
+        correlation_matrix = torch.clamp(correlation_matrix, max=0.99)
         correlation_matrix.diagonal().fill_(1.0)
         correlation_matrix = correlation_matrix.expand(mean.shape[0], -1, -1).double()
         

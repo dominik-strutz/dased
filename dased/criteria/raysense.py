@@ -184,6 +184,7 @@ class RaySensitivity:
         
             - ``"rayleigh"``: Rayleigh waves with :math:`\cos^2(\theta)` directional scaling
             - ``"love"``: Love waves with :math:`|\sin(2\theta)|` directional scaling
+            - ``"3C"``: Three-component (no directional scaling)
             
             Where :math:`\theta` is the angle between ray direction and channel orientation.
             
@@ -279,7 +280,7 @@ class RaySensitivity:
     # prior model for non straight ray paths
     # allow to incorporate prior knowledge in model and data space to avoid regularization
 
-    _VALID_DATA_TYPES = {"rayleigh", "love"}
+    _VALID_DATA_TYPES = {"rayleigh", "love", "3c"}
     _VALID_CRITERIA = {"A", "D", "RER"}
 
     def __init__(
@@ -379,7 +380,11 @@ class RaySensitivity:
             # Love waves have maximum sensitivity for horizontal motion
             # Drop factor of 0.5 since this is accounted for in reference distance
             return np.abs(np.sin(2 * angle_diff))
-        return np.ones_like(phi)  # Should not be reached
+        elif self.data_type == "3c":
+            # 3C sensitivity (isotropic)
+            return np.ones_like(phi)
+        else:
+            raise ValueError(f"Unsupported data_type: {self.data_type}")
 
     def _snr_scaling_pair(
         self, phi: np.ndarray, theta1: np.ndarray, theta2: np.ndarray
@@ -959,7 +964,7 @@ class RaySensitivity:
         show_stats: bool = True,
         plot_sources: bool = True,
         plot_roi_boundary: bool = True,
-        log_scale: bool = True,
+        log_scale: bool = False,
         **kwargs,
     ) -> Tuple[Optional[plt.Figure], Optional[matplotlib.axes.Axes]]:
         """
@@ -1196,6 +1201,54 @@ class RaySensitivity:
             return ax
         return fig, ax
 
+    def _compute_checkerboard_metrics(
+        self,
+        velocity_true: np.ndarray,
+        velocity_est: np.ndarray,
+        roi_mask: Optional[np.ndarray] = None,
+    ) -> dict:
+        """
+        Compute resolution metrics for checkerboard test evaluation.
+
+        Arguments:
+            velocity_true: True velocity model (2D array).
+            velocity_est: Estimated velocity model (2D array).
+            roi_mask: Optional boolean mask for ROI (True = inside ROI).
+
+        Returns:
+            Dictionary with amplitude recovery (AR), correlation coefficient (CC),
+            and root mean square error (RMSE).
+        """
+        # Flatten and apply ROI mask if provided
+        if roi_mask is not None:
+            mask = roi_mask.flatten()
+            v_true = velocity_true.flatten()[mask]
+            v_est = velocity_est.flatten()[mask]
+        else:
+            v_true = velocity_true.flatten()
+            v_est = velocity_est.flatten()
+
+        # Remove NaN values
+        valid = ~(np.isnan(v_true) | np.isnan(v_est))
+        v_true = v_true[valid]
+        v_est = v_est[valid]
+
+        if len(v_true) == 0:
+            return {"AR": np.nan, "CC": np.nan, "RMSE": np.nan}
+
+        # Amplitude Recovery: ratio of standard deviations
+        std_true = np.std(v_true)
+        std_est = np.std(v_est)
+        ar = std_est / std_true if std_true > 0 else np.nan
+
+        # Correlation Coefficient
+        cc = np.corrcoef(v_true, v_est)[0, 1] if len(v_true) > 1 else np.nan
+
+        # Root Mean Square Error
+        rmse = np.sqrt(np.mean((v_est - v_true) ** 2))
+
+        return {"AR": ar, "CC": cc, "RMSE": rmse}
+
     def inverse(
         self,
         design,
@@ -1272,6 +1325,7 @@ class RaySensitivity:
         ax: Optional[matplotlib.axes.Axes] = None,
         checkerboard_size: int = 4,
         mask_outside_roi: bool = True,
+        show_metrics: bool = True,
         **kwargs,
     ):
         """
@@ -1289,6 +1343,7 @@ class RaySensitivity:
             correlation_length: Prior correlation length.
             regularization_weight: Prior regularization weight.
             mask_outside_roi: If True, set values outside ROI to NaN.
+            show_metrics: If True, display resolution metrics (AR, CC, RMSE) on the plot.
             **kwargs: Additional arguments for pcolormesh.
 
         Returns:
@@ -1352,9 +1407,33 @@ class RaySensitivity:
                 velocity_true = np.where(roi_mask, velocity_true, np.nan)
                 velocity_est = np.where(roi_mask, velocity_est, np.nan)
 
+        # Compute ROI mask for metrics (before masking velocities with NaN)
+        roi_mask_for_metrics = None
+        if self.roi is not None:
+            x_centers = 0.5 * (x_nodes[1:] + x_nodes[:-1])
+            y_centers = 0.5 * (y_nodes[1:] + y_nodes[:-1])
+            roi_mask_for_metrics = self._get_roi_mask(x_centers, y_centers)
+
+        # Compute metrics using original (non-NaN-masked) velocity arrays
+        metrics = self._compute_checkerboard_metrics(
+            1.0 / m_true, 1.0 / m_est, roi_mask_for_metrics
+        )
+
         if ax is not None:
             # Only plot the estimated velocity on the provided ax
             ax.pcolormesh(X, Y, velocity_est, **kwargs)
+            if show_metrics:
+                metrics_text = f"AR: {metrics['AR']:.2f}  CC: {metrics['CC']:.2f}  RMSE: {metrics['RMSE']:.1f} m/s"
+                ax.text(
+                    0.03,
+                    0.03,
+                    metrics_text,
+                    transform=ax.transAxes,
+                    fontsize=7,
+                    va="bottom",
+                    ha="left",
+                    # bbox=dict(boxstyle="round,pad=0.4", fc="white", alpha=0.8),
+                )
             return ax
 
         design.plot(ax=ax, color="k", plot_style="line", label="DAS Cable", zorder=3)
@@ -1382,6 +1461,20 @@ class RaySensitivity:
         axs[1].set_ylabel("Y coordinate")
         axs[1].set_aspect("equal")
         plt.colorbar(mesh1, ax=axs[1], label="Velocity (m/s)", shrink=0.6)
+
+        # Add metrics text box to estimated velocity subplot
+        if show_metrics:
+            metrics_text = f"AR: {metrics['AR']:.2f}\nCC: {metrics['CC']:.2f}\nRMSE: {metrics['RMSE']:.1f} m/s"
+            axs[1].text(
+                0.02,
+                0.02,
+                metrics_text,
+                transform=axs[1].transAxes,
+                fontsize=9,
+                va="bottom",
+                ha="left",
+                bbox=dict(boxstyle="round,pad=0.4", fc="white", alpha=0.8),
+            )
 
         plt.tight_layout()
         return fig, axs

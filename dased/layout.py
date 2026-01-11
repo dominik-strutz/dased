@@ -767,7 +767,6 @@ class DASLayout:
             1000,
             100000
         ))
-        print(f"Sampling spline with {num_samples} points for arc length calculation.")
         
         t_samples = np.linspace(t_start, t_end, num_samples)
         points_2d = spline_func(t_samples)
